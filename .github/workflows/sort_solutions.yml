@@ -1,0 +1,105 @@
+name: Sort LeetCode Solutions
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sort:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Sort solutions into difficulty folders
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python << 'PYEOF'
+          import os
+          import re
+          import shutil
+          import subprocess
+          import requests
+
+          DIFFICULTY_FOLDER = {"Easy": "Easy", "Medium": "Medium", "Hard": "Hard"}
+
+          # Folders to ignore — not LeetCode problem folders
+          IGNORE = {"Easy", "Medium", "Hard", ".github", ".git", "__pycache__"}
+
+          def get_difficulty(slug):
+              query = {
+                  "query": """
+                  query questionData($titleSlug: String!) {
+                      question(titleSlug: $titleSlug) {
+                          difficulty
+                      }
+                  }
+                  """,
+                  "variables": {"titleSlug": slug}
+              }
+              try:
+                  r = requests.post(
+                      "https://leetcode.com/graphql",
+                      json=query,
+                      headers={"Content-Type": "application/json"},
+                      timeout=15
+                  )
+                  r.raise_for_status()
+                  return r.json()["data"]["question"]["difficulty"]
+              except Exception as e:
+                  print(f"Could not get difficulty for {slug}: {e}")
+                  return None
+
+          # Find all folders in root that look like LeetCode problem folders
+          # LeetSync creates folders like "1-two-sum", "42-trapping-rain-water"
+          moved = False
+          for item in os.listdir("."):
+              if not os.path.isdir(item):
+                  continue
+              if item in IGNORE or item.startswith("."):
+                  continue
+              # Check if it matches pattern: number-problem-name
+              if not re.match(r"^\d+-", item):
+                  continue
+
+              print(f"Found unsorted folder: {item}")
+              slug = re.sub(r"^\d+-", "", item)  # remove leading number
+              difficulty = get_difficulty(slug)
+
+              if not difficulty:
+                  print(f"Skipping {item} — could not determine difficulty")
+                  continue
+
+              target_folder = DIFFICULTY_FOLDER.get(difficulty, "Easy")
+              target_path = os.path.join(target_folder, item)
+
+              # Move the folder
+              os.makedirs(target_folder, exist_ok=True)
+              shutil.move(item, target_path)
+              print(f"Moved {item} → {target_folder}/")
+              moved = True
+
+          if moved:
+              subprocess.run(["git", "config", "user.name", "github-actions"], check=True)
+              subprocess.run(["git", "config", "user.email", "github-actions@github.com"], check=True)
+              subprocess.run(["git", "add", "-A"], check=True)
+              subprocess.run(["git", "commit", "-m", "Auto-sort: move solutions to difficulty folders"], check=True)
+              subprocess.run(["git", "push"], check=True)
+              print("Pushed sorted folders!")
+          else:
+              print("No unsorted folders found.")
+          PYEOF
