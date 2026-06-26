@@ -34,10 +34,9 @@ jobs:
           import shutil
           import subprocess
           import requests
+          import sys
 
           DIFFICULTY_FOLDER = {"Easy": "Easy", "Medium": "Medium", "Hard": "Hard"}
-
-          # Folders to ignore — not LeetCode problem folders
           IGNORE = {"Easy", "Medium", "Hard", ".github", ".git", "__pycache__"}
 
           def get_difficulty(slug):
@@ -64,20 +63,17 @@ jobs:
                   print(f"Could not get difficulty for {slug}: {e}")
                   return None
 
-          # Find all folders in root that look like LeetCode problem folders
-          # LeetSync creates folders like "1-two-sum", "42-trapping-rain-water"
           moved = False
           for item in os.listdir("."):
               if not os.path.isdir(item):
                   continue
               if item in IGNORE or item.startswith("."):
                   continue
-              # Check if it matches pattern: number-problem-name
               if not re.match(r"^\d+-", item):
                   continue
 
               print(f"Found unsorted folder: {item}")
-              slug = re.sub(r"^\d+-", "", item)  # remove leading number
+              slug = re.sub(r"^\d+-", "", item)
               difficulty = get_difficulty(slug)
 
               if not difficulty:
@@ -87,7 +83,6 @@ jobs:
               target_folder = DIFFICULTY_FOLDER.get(difficulty, "Easy")
               target_path = os.path.join(target_folder, item)
 
-              # Move the folder
               os.makedirs(target_folder, exist_ok=True)
               shutil.move(item, target_path)
               print(f"Moved {item} → {target_folder}/")
@@ -98,8 +93,11 @@ jobs:
               subprocess.run(["git", "config", "user.email", "github-actions@github.com"], check=True)
               subprocess.run(["git", "add", "-A"], check=True)
               subprocess.run(["git", "commit", "-m", "Auto-sort: move solutions to difficulty folders"], check=True)
+              subprocess.run(["git", "pull", "--rebase"], check=True)
               subprocess.run(["git", "push"], check=True)
               print("Pushed sorted folders!")
           else:
-              print("No unsorted folders found.")
+              print("No unsorted folders found. Nothing to do.")
+              sys.exit(0)
           PYEOF
+          
